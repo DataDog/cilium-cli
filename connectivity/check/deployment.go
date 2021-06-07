@@ -94,6 +94,7 @@ type deploymentParameters struct {
 	ReadinessProbe *corev1.Probe
 	Labels         map[string]string
 	HostNetwork    bool
+	Tolerations    []corev1.Toleration
 }
 
 func newDeployment(p deploymentParameters) *appsv1.Deployment {
@@ -141,6 +142,7 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 					},
 					Affinity:    p.Affinity,
 					HostNetwork: p.HostNetwork,
+					Tolerations: p.Tolerations,
 				},
 			},
 			Replicas: &replicas32,
@@ -152,7 +154,6 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 			},
 		},
 	}
-
 	for k, v := range p.Labels {
 		dep.Spec.Template.ObjectMeta.Labels[k] = v
 	}
@@ -357,6 +358,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 			},
+			Tolerations:    ct.params.GlobalTolerations,
 			ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, echoDeployment, metav1.CreateOptions{})
@@ -524,11 +526,12 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying client deployment...", ct.clients.src.ClusterName())
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    ClientDeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   ct.params.CurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
+			Name:        ClientDeploymentName,
+			Kind:        kindClientName,
+			Port:        8080,
+			Image:       ct.params.CurlImage,
+			Tolerations: ct.params.GlobalTolerations,
+			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -561,6 +564,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 			},
+			Tolerations: ct.params.GlobalTolerations,
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -609,6 +613,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 				ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
+				Tolerations:    ct.params.GlobalTolerations,
 			})
 			_, err = ct.clients.dst.CreateDeployment(ctx, ct.params.TestNamespace, echoOtherNodeDeployment, metav1.CreateOptions{})
 			if err != nil {
