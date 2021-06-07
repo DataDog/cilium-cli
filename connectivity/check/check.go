@@ -17,6 +17,7 @@ package check
 import (
 	"fmt"
 	"io"
+	corev1 "k8s.io/api/core/v1"
 	"regexp"
 	"time"
 
@@ -45,6 +46,8 @@ type Parameters struct {
 	Verbose               bool
 	Debug                 bool
 	PauseOnFail           bool
+	GlobalTolerations     []corev1.Toleration
+	AgentDaemonSetName    string
 }
 
 func (p Parameters) ciliumEndpointTimeout() time.Duration {
