@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/cilium/cilium/api/v1/flow"
 	"github.com/cilium/cilium/api/v1/observer"
 
@@ -48,6 +50,7 @@ type Parameters struct {
 	AgentDaemonSetName    string
 	DNSTestServerImage    string
 	Datapath              bool
+	GlobalTolerations     []corev1.Toleration
 }
 
 func (p Parameters) ciliumEndpointTimeout() time.Duration {
