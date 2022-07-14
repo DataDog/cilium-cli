@@ -36,7 +36,6 @@ const (
 	Client2DeploymentName = "client2"
 
 	DNSTestServerContainerName = "dns-test-server"
-	DNSTestServerImage         = "coredns/coredns:1.9.3@sha256:bdb36ee882c13135669cfc2bb91c808a33926ad1a411fee07bd2dc344bb8f782"
 
 	echoSameNodeDeploymentName  = "echo-same-node"
 	echoOtherNodeDeploymentName = "echo-other-node"
@@ -161,7 +160,7 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 	return dep
 }
 
-func newDeploymentWithDNSTestServer(p deploymentParameters) *appsv1.Deployment {
+func newDeploymentWithDNSTestServer(p deploymentParameters, DNSTestServerImage string) *appsv1.Deployment {
 	dep := newDeployment(p)
 
 	dep.Spec.Template.Spec.Containers = append(
@@ -360,7 +359,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 			},
 			Tolerations:    ct.params.GlobalTolerations,
 			ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
-		})
+		}, ct.params.DNSTestServerImage)
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, echoDeployment, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("unable to create deployment %s: %s", echoSameNodeDeploymentName, err)
@@ -614,7 +613,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 				},
 				ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
 				Tolerations:    ct.params.GlobalTolerations,
-			})
+			}, ct.params.DNSTestServerImage)
 			_, err = ct.clients.dst.CreateDeployment(ctx, ct.params.TestNamespace, echoOtherNodeDeployment, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("unable to create deployment %s: %w", echoOtherNodeDeploymentName, err)

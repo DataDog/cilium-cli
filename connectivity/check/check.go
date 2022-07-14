@@ -47,6 +47,7 @@ type Parameters struct {
 	JSONMockImage         string
 	GlobalTolerations     []corev1.Toleration
 	AgentDaemonSetName    string
+	DNSTestServerImage    string
 }
 
 func (p Parameters) ciliumEndpointTimeout() time.Duration {

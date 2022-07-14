@@ -7,13 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	corev1 "k8s.io/api/core/v1"
 	"os"
 	"os/signal"
 	"regexp"
 	"strings"
 	"syscall"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/spf13/cobra"
 
@@ -163,6 +164,7 @@ func newCmdConnectivityTest() *cobra.Command {
 	cmd.Flags().StringVar(&params.CurlImage, "curl-image", defaults.ConnectivityCheckAlpineCurlImage, "Image path to use for curl")
 	cmd.Flags().StringVar(&params.PerformanceImage, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
 	cmd.Flags().StringVar(&params.JSONMockImage, "json-mock-image", defaults.ConnectivityCheckJSONMockImage, "Image path to use for json mock")
+	cmd.Flags().StringVar(&params.DNSTestServerImage, "dns-test-servier-image", defaults.ConnectivityDNSTestServerImage, "Image path to use for CoreDNS test server")
 
 	return cmd
 }
