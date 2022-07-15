@@ -36,7 +36,6 @@ const (
 	Client2DeploymentName = "client2"
 
 	DNSTestServerContainerName = "dns-test-server"
-	DNSTestServerImage         = "coredns/coredns:1.9.3@sha256:bdb36ee882c13135669cfc2bb91c808a33926ad1a411fee07bd2dc344bb8f782"
 
 	echoSameNodeDeploymentName  = "echo-same-node"
 	echoOtherNodeDeploymentName = "echo-other-node"
@@ -94,6 +93,7 @@ type deploymentParameters struct {
 	ReadinessProbe *corev1.Probe
 	Labels         map[string]string
 	HostNetwork    bool
+	Tolerations    []corev1.Toleration
 }
 
 func newDeployment(p deploymentParameters) *appsv1.Deployment {
@@ -141,6 +141,7 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 					},
 					Affinity:    p.Affinity,
 					HostNetwork: p.HostNetwork,
+					Tolerations: p.Tolerations,
 				},
 			},
 			Replicas: &replicas32,
@@ -152,7 +153,6 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 			},
 		},
 	}
-
 	for k, v := range p.Labels {
 		dep.Spec.Template.ObjectMeta.Labels[k] = v
 	}
@@ -160,7 +160,7 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 	return dep
 }
 
-func newDeploymentWithDNSTestServer(p deploymentParameters) *appsv1.Deployment {
+func newDeploymentWithDNSTestServer(p deploymentParameters, DNSTestServerImage string) *appsv1.Deployment {
 	dep := newDeployment(p)
 
 	dep.Spec.Template.Spec.Containers = append(
@@ -357,8 +357,9 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 			},
+			Tolerations:    ct.params.GlobalTolerations,
 			ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
-		})
+		}, ct.params.DNSTestServerImage)
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, echoDeployment, metav1.CreateOptions{})
 		if err != nil {
 			return fmt.Errorf("unable to create deployment %s: %s", echoSameNodeDeploymentName, err)
@@ -524,11 +525,12 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying client deployment...", ct.clients.src.ClusterName())
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    ClientDeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   ct.params.CurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
+			Name:        ClientDeploymentName,
+			Kind:        kindClientName,
+			Port:        8080,
+			Image:       ct.params.CurlImage,
+			Tolerations: ct.params.GlobalTolerations,
+			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -561,6 +563,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 			},
+			Tolerations: ct.params.GlobalTolerations,
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
 		if err != nil {
@@ -609,7 +612,8 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 				ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
-			})
+				Tolerations:    ct.params.GlobalTolerations,
+			}, ct.params.DNSTestServerImage)
 			_, err = ct.clients.dst.CreateDeployment(ctx, ct.params.TestNamespace, echoOtherNodeDeployment, metav1.CreateOptions{})
 			if err != nil {
 				return fmt.Errorf("unable to create deployment %s: %w", echoOtherNodeDeploymentName, err)
