@@ -657,6 +657,7 @@ func (ct *ConnectivityTest) deleteDeployments(ctx context.Context, client *k8s.C
 		ct.Logf("⌛ [%s] Waiting for namespace %s to disappear", client.ClusterName(), ct.params.TestNamespace)
 		for err == nil {
 			time.Sleep(time.Second)
+			_ = client.DeleteNamespace(ctx, ct.params.TestNamespace, metav1.DeleteOptions{})
 			_, err = client.GetNamespace(ctx, ct.params.TestNamespace, metav1.GetOptions{})
 		}
 	}
