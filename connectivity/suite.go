@@ -58,8 +58,8 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 	var v semver.Version
 	helmState, err := ct.K8sClient().GetHelmState(ctx, ct.Params().CiliumNamespace, defaults.HelmValuesSecretName)
 	if err != nil {
-		ct.Warnf("Unable to detect Cilium version, assuming %v for connectivity tests", defaults.Version)
-		v, err = utils.ParseCiliumVersion(defaults.Version)
+		ct.Warnf("Unable to detect Cilium version, assuming %v for connectivity tests", ct.Params().CiliumVersion)
+		v, err = utils.ParseCiliumVersion(ct.Params().CiliumVersion)
 		if err != nil {
 			return err
 		}
