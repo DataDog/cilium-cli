@@ -22,3 +22,5 @@ spec:
     - ports:
       - port: "53"
         protocol: ANY
+  - toCIDR:
+    - 169.254.20.10/32
