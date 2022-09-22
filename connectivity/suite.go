@@ -8,6 +8,7 @@ import (
 	_ "embed"
 
 	"github.com/blang/semver/v4"
+
 	"github.com/cilium/cilium/pkg/versioncheck"
 
 	"github.com/cilium/cilium-cli/connectivity/check"
@@ -22,6 +23,21 @@ var (
 
 	//go:embed manifests/allow-all-ingress.yaml
 	allowAllIngressPolicyYAML string
+
+	//go:embed manifests/deny-all-egress.yaml
+	denyAllEgressPolicyYAML string
+
+	//go:embed manifests/deny-all-ingress.yaml
+	denyAllIngressPolicyYAML string
+
+	//go:embed manifests/deny-all-entities.yaml
+	denyAllEntitiesPolicyYAML string
+
+	//go:embed manifests/allow-cluster-entity.yaml
+	allowClusterEntityPolicyYAML string
+
+	//go:embed manifests/allow-host-entity.yaml
+	allowHostEntityPolicyYAML string
 
 	//go:embed manifests/allow-all-except-world.yaml
 	allowAllExceptWorldPolicyYAML string
@@ -75,6 +91,9 @@ var (
 
 	//go:embed manifests/client-egress-l7-http.yaml
 	clientEgressL7HTTPPolicyYAML string
+
+	//go:embed manifests/client-egress-l7-http-method.yaml
+	clientEgressL7HTTPMethodPolicyYAML string
 
 	//go:embed manifests/client-egress-l7-http-named-port.yaml
 	clientEgressL7HTTPNamedPortPolicyYAML string
@@ -191,6 +210,80 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 				return check.ResultOK, check.ResultOK
 			}
 			return check.ResultOK, check.ResultDrop
+		})
+
+	// This policy denies all ingresses by default
+	ct.NewTest("all-ingress-deny").
+		WithPolicy(denyAllIngressPolicyYAML).
+		WithScenarios(
+			// Pod to Pod fails because there is no egress policy (so egress traffic originating from a pod is allowed),
+			// but then at the destination there is ingress policy that denies the traffic.
+			tests.PodToPod(),
+			// Egress to world works because there is no egress policy (so egress traffic originating from a pod is allowed),
+			// then when replies come back, they are considered as "replies" to the outbound connection.
+			// so they are not subject to ingress policy.
+			tests.PodToCIDR(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Destination().Address() == "1.0.0.1" || a.Destination().Address() == "1.1.1.1" {
+				return check.ResultOK, check.ResultNone
+			}
+			return check.ResultDrop, check.ResultNone
+		})
+
+	// This policy denies all egresses by default
+	ct.NewTest("all-egress-deny").
+		WithPolicy(denyAllEgressPolicyYAML).
+		WithScenarios(
+			tests.PodToPod(),
+			tests.PodToPodWithEndpoints(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultDrop, check.ResultNone
+		})
+
+	// This policy denies all entities by default
+	ct.NewTest("all-entities-deny").
+		WithPolicy(denyAllEntitiesPolicyYAML).
+		WithScenarios(
+			tests.PodToPod(),
+			tests.PodToCIDR(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultDrop, check.ResultNone
+		})
+
+	// This policy allows cluster entity
+	ct.NewTest("cluster-entity").
+		WithPolicy(allowClusterEntityPolicyYAML).
+		WithScenarios(
+			// Only enable to local cluster for now due to the below
+			// https://github.com/cilium/cilium/blob/88c4dddede2a3b5b9a7339c1316a0dedd7229a26/pkg/policy/api/entity.go#L126
+			tests.PodToPod(tests.WithDestinationLabelsOption(map[string]string{"name": "echo-same-node"})),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultOK, check.ResultOK
+		})
+
+	if ct.Params().MultiCluster != "" {
+		ct.NewTest("cluster-entity-multi-cluster").
+			WithPolicy(allowClusterEntityPolicyYAML).
+			WithScenarios(
+				tests.PodToPod(tests.WithDestinationLabelsOption(map[string]string{"name": "echo-other-node"})),
+			).
+			WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+				return check.ResultDrop, check.ResultNone
+			})
+	}
+
+	// This policy allows host entity
+	ct.NewTest("host-entity").
+		WithPolicy(allowHostEntityPolicyYAML).
+		WithScenarios(
+			tests.PodToHost(),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			return check.ResultOK, check.ResultNone
 		})
 
 	// This policy allows ingress to echo only from client with a label 'other:client'.
@@ -438,7 +531,38 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 			return check.ResultDrop, check.ResultDrop
 		})
 
+	// Health check tests.
+	ct.NewTest("health").
+		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureHealthChecking)).
+		WithScenarios(tests.CiliumHealth())
+
 	// The following tests have DNS redirect policies. They should be executed last.
+
+	// Test L7 HTTP with different methods introspection using an egress policy on the clients.
+	ct.NewTest("client-egress-l7-method").
+		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
+		WithPolicy(clientEgressOnlyDNSPolicyYAML).      // DNS resolution only
+		WithPolicy(clientEgressL7HTTPMethodPolicyYAML). // L7 allow policy with HTTP introspection (POST only)
+		WithScenarios(
+			tests.PodToPodWithEndpoints(tests.WithMethod("POST"), tests.WithDestinationLabelsOption(map[string]string{"other": "echo"})),
+			tests.PodToPodWithEndpoints(tests.WithDestinationLabelsOption(map[string]string{"first": "echo"})),
+		).
+		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Source().HasLabel("other", "client") && // Only client2 is allowed to make HTTP calls.
+				(a.Destination().Port() == 8080) { // port 8080 is traffic to echo Pod.
+				if a.Destination().HasLabel("other", "echo") { //we are POSTing only other echo
+					egress = check.ResultOK
+
+					egress.HTTP = check.HTTP{
+						Method: "POST",
+					}
+					return egress, check.ResultNone
+				}
+				// Else expect HTTP drop by proxy
+				return check.ResultDropCurlHTTPError, check.ResultNone
+			}
+			return check.ResultDrop, check.ResultNone
+		})
 
 	// Test L7 HTTP introspection using an egress policy on the clients.
 	ct.NewTest("client-egress-l7").
@@ -512,8 +636,23 @@ func Run(ctx context.Context, ct *check.ConnectivityTest) error {
 		WithFeatureRequirements(check.RequireFeatureEnabled(check.FeatureL7Proxy)).
 		WithScenarios(
 			tests.PodToWorld(),
+			tests.PodToWorld2(), // resolves cilium.io
 		).
 		WithExpectations(func(a *check.Action) (egress, ingress check.Result) {
+			if a.Destination().Address() == "cilium.io" {
+				if a.Destination().Path() == "/" || a.Destination().Path() == "" {
+					egress = check.ResultDNSOK
+					egress.HTTP = check.HTTP{
+						Method: "GET",
+						URL:    "https://cilium.io",
+					}
+					// Expect packets for cilium.io / 104.198.14.52 to be dropped.
+					return check.ResultDropCurlTimeout, check.ResultNone
+				}
+				// Else expect HTTP drop by proxy
+				return check.ResultDNSOKDropCurlHTTPError, check.ResultNone
+			}
+
 			if a.Destination().Port() == 80 && a.Destination().Address() == "one.one.one.one" {
 				if a.Destination().Path() == "/" || a.Destination().Path() == "" {
 					egress = check.ResultDNSOK
