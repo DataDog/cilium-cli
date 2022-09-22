@@ -96,6 +96,7 @@ type deploymentParameters struct {
 	ReadinessProbe *corev1.Probe
 	Labels         map[string]string
 	HostNetwork    bool
+	Tolerations    []corev1.Toleration
 }
 
 func newDeployment(p deploymentParameters) *appsv1.Deployment {
@@ -148,6 +149,7 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 					Affinity:           p.Affinity,
 					HostNetwork:        p.HostNetwork,
 					ServiceAccountName: p.Name,
+					Tolerations:        p.Tolerations,
 				},
 			},
 			Replicas: &replicas32,
@@ -159,7 +161,6 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 			},
 		},
 	}
-
 	for k, v := range p.Labels {
 		dep.Spec.Template.ObjectMeta.Labels[k] = v
 	}
@@ -438,6 +439,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 			},
+			Tolerations:    ct.params.GlobalTolerations,
 			ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
 		}, ct.params.DNSTestServerImage)
 		_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(echoSameNodeDeploymentName), metav1.CreateOptions{})
@@ -625,12 +627,13 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), clientDeploymentName)
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:      clientDeploymentName,
-			Kind:      kindClientName,
-			NamedPort: "http-8080",
-			Port:      8080,
-			Image:     ct.params.CurlImage,
-			Command:   []string{"/bin/ash", "-c", "sleep 10000000"},
+			Name:        clientDeploymentName,
+			Kind:        kindClientName,
+			NamedPort:   "http-8080",
+			Port:        8080,
+			Image:       ct.params.CurlImage,
+			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
+			Tolerations: ct.params.GlobalTolerations,
 		})
 		_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(clientDeploymentName), metav1.CreateOptions{})
 		if err != nil {
@@ -668,6 +671,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 			},
+			Tolerations: ct.params.GlobalTolerations,
 		})
 		_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(client2DeploymentName), metav1.CreateOptions{})
 		if err != nil {
@@ -722,6 +726,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 				ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
+				Tolerations:    ct.params.GlobalTolerations,
 			}, ct.params.DNSTestServerImage)
 			_, err = ct.clients.dst.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(echoOtherNodeDeploymentName), metav1.CreateOptions{})
 			if err != nil {

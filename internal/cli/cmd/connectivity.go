@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
 	"os"
 	"os/signal"
 	"regexp"
@@ -36,9 +37,11 @@ func newCmdConnectivity() *cobra.Command {
 }
 
 var params = check.Parameters{
-	Writer: os.Stdout,
+	Writer:            os.Stdout,
+	GlobalTolerations: []corev1.Toleration{},
 }
 var tests []string
+var podTolerations []string
 
 func newCmdConnectivityTest() *cobra.Command {
 	cmd := &cobra.Command{
@@ -62,6 +65,34 @@ func newCmdConnectivityTest() *cobra.Command {
 					}
 					params.RunTests = append(params.RunTests, rgx)
 				}
+			}
+
+			// Validate toleration string
+			var allowedEffects = []string{"NoSchedule", "NoExecute", "PreferNoSchedule"}
+			for _, toleration := range podTolerations {
+				tolerationString := strings.Split(toleration, ":")
+				if len(tolerationString) < 2 {
+					return fmt.Errorf("invalid format: %s, toleration string should be of format key1=value1:effect", toleration)
+				}
+				validEffect := false
+				for _, e := range allowedEffects {
+					if tolerationString[1] == e {
+						validEffect = true
+					}
+				}
+				if !validEffect {
+					return fmt.Errorf("invalid effect: %s, toleration effect should be either NoSchedule, NoExecute or PreferNoSchedule", tolerationString[1])
+				}
+				kv := strings.Split(tolerationString[0], "=")
+				if len(kv) < 2 || len(kv[0]) == 0 || len(kv[1]) == 0 {
+					return fmt.Errorf("invalid key value pair: %s", tolerationString[0])
+				}
+				params.GlobalTolerations = append(params.GlobalTolerations, corev1.Toleration{
+					Key:      kv[0],
+					Operator: "Equal",
+					Value:    kv[1],
+					Effect:   corev1.TaintEffect(tolerationString[1]),
+				})
 			}
 
 			// Instantiate the test harness.
@@ -114,6 +145,7 @@ func newCmdConnectivityTest() *cobra.Command {
 	cmd.Flags().StringVar(&params.AgentDaemonSetName, "agent-daemonset-name", defaults.AgentDaemonSetName, "Name of cilium agent daemonset")
 	cmd.Flags().StringVar(&params.MultiCluster, "multi-cluster", "", "Test across clusters to given context")
 	cmd.Flags().StringSliceVar(&tests, "test", []string{}, "Run tests that match one of the given regular expressions, skip tests by starting the expression with '!', target Scenarios with e.g. '/pod-to-cidr'")
+	cmd.Flags().StringSliceVar(&podTolerations, "pod-tolerations", []string{}, "Tolerations to add to test workloads and client pods. Comma separated values of the format key1=value1:effect, effect can be NoSchedule, NoExecute or PreferNoSchedule")
 	cmd.Flags().StringVar(&params.FlowValidation, "flow-validation", check.FlowValidationModeWarning, "Enable Hubble flow validation { disabled | warning | strict }")
 	cmd.Flags().BoolVar(&params.AllFlows, "all-flows", false, "Print all flows during flow validation")
 	cmd.Flags().StringVar(&params.AssumeCiliumVersion, "assume-cilium-version", "", "Assume Cilium version for connectivity tests")
