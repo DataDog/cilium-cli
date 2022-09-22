@@ -24,3 +24,9 @@ spec:
     - matchExpressions:
       - { key: 'k8s-app', operator: In, values: [ "kube-dns", "coredns", "node-local-dns" ] }
       - { key: 'io.kubernetes.pod.namespace', operator: In, values: [ "kube-system" ] }
+    - matchLabels:
+        io.kubernetes.pod.namespace: cluster-dns
+        app: coredns
+    - matchLabels:
+        io.kubernetes.pod.namespace: cluster-dns-node-local
+        app: node-local-dns

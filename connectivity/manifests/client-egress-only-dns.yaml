@@ -25,3 +25,9 @@ spec:
     - matchLabels:
         io.kubernetes.pod.namespace: kube-system
         k8s-app: node-local-dns
+    - matchLabels:
+        io.kubernetes.pod.namespace: cluster-dns
+        app: coredns
+    - matchLabels:
+        io.kubernetes.pod.namespace: cluster-dns-node-local
+        app: node-local-dns
