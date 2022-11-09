@@ -51,6 +51,7 @@ type Parameters struct {
 	DNSTestServerImage    string
 	Datapath              bool
 	GlobalTolerations     []corev1.Toleration
+	AgentPodSelector      string
 }
 
 func (p Parameters) ciliumEndpointTimeout() time.Duration {
