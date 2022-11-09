@@ -161,6 +161,7 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 			},
 		},
 	}
+
 	for k, v := range p.Labels {
 		dep.Spec.Template.ObjectMeta.Labels[k] = v
 	}
@@ -336,122 +337,6 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		}
 	}
 
-	if ct.params.MultiCluster != "" {
-		if ct.params.ForceDeploy {
-			if err := ct.deleteDeployments(ctx, ct.clients.dst); err != nil {
-				return err
-			}
-		}
-
-		_, err = ct.clients.dst.GetNamespace(ctx, ct.params.TestNamespace, metav1.GetOptions{})
-		if err != nil {
-			ct.Logf("✨ [%s] Creating namespace %s for connectivity check...", ct.clients.dst.ClusterName(), ct.params.TestNamespace)
-			_, err = ct.clients.dst.CreateNamespace(ctx, ct.params.TestNamespace, metav1.CreateOptions{})
-			if err != nil {
-				return fmt.Errorf("unable to create namespace %s: %s", ct.params.TestNamespace, err)
-			}
-		}
-	}
-
-	_, err = ct.clients.src.GetService(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.GetOptions{})
-	if err != nil {
-		ct.Logf("✨ [%s] Deploying %s service...", ct.clients.src.ClusterName(), echoSameNodeDeploymentName)
-		svc := newService(echoSameNodeDeploymentName, map[string]string{"name": echoSameNodeDeploymentName}, serviceLabels, "http", 8080)
-		_, err = ct.clients.src.CreateService(ctx, ct.params.TestNamespace, svc, metav1.CreateOptions{})
-		if err != nil {
-			return err
-		}
-	}
-
-	if ct.params.MultiCluster != "" {
-		_, err = ct.clients.src.GetService(ctx, ct.params.TestNamespace, echoOtherNodeDeploymentName, metav1.GetOptions{})
-		if err != nil {
-			ct.Logf("✨ [%s] Deploying %s service...", ct.clients.src.ClusterName(), echoOtherNodeDeploymentName)
-			svc := newService(echoOtherNodeDeploymentName, map[string]string{"name": echoOtherNodeDeploymentName}, serviceLabels, "http", 8080)
-			svc.ObjectMeta.Annotations = map[string]string{}
-			svc.ObjectMeta.Annotations["io.cilium/global-service"] = "true"
-
-			_, err = ct.clients.src.CreateService(ctx, ct.params.TestNamespace, svc, metav1.CreateOptions{})
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	hostPort := 0
-	if ct.features[FeatureHostPort].Enabled {
-		hostPort = EchoServerHostPort
-	}
-	dnsConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: corednsConfigMapName,
-		},
-		Data: map[string]string{
-			"Corefile": `. {
-				local
-				ready
-				log
-			}`,
-		},
-	}
-	_, err = ct.clients.src.GetConfigMap(ctx, ct.params.TestNamespace, corednsConfigMapName, metav1.GetOptions{})
-	if err != nil {
-		ct.Logf("✨ [%s] Deploying DNS test server configmap...", ct.clients.src.ClusterName())
-		_, err = ct.clients.src.CreateConfigMap(ctx, ct.params.TestNamespace, dnsConfigMap, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("unable to create configmap %s: %s", corednsConfigMapName, err)
-		}
-	}
-	if ct.params.MultiCluster != "" {
-		_, err = ct.clients.dst.GetConfigMap(ctx, ct.params.TestNamespace, corednsConfigMapName, metav1.GetOptions{})
-		if err != nil {
-			ct.Logf("✨ [%s] Deploying DNS test server configmap...", ct.clients.dst.ClusterName())
-			_, err = ct.clients.dst.CreateConfigMap(ctx, ct.params.TestNamespace, dnsConfigMap, metav1.CreateOptions{})
-			if err != nil {
-				return fmt.Errorf("unable to create configmap %s: %s", corednsConfigMapName, err)
-			}
-		}
-	}
-
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.GetOptions{})
-	if err != nil {
-		ct.Logf("✨ [%s] Deploying same-node deployment...", ct.clients.src.ClusterName())
-		containerPort := 8080
-		echoDeployment := newDeploymentWithDNSTestServer(deploymentParameters{
-			Name:      echoSameNodeDeploymentName,
-			Kind:      kindEchoName,
-			Port:      containerPort,
-			NamedPort: "http-8080",
-			HostPort:  hostPort,
-			Image:     ct.params.JSONMockImage,
-			Labels:    map[string]string{"other": "echo"},
-			Affinity: &corev1.Affinity{
-				PodAffinity: &corev1.PodAffinity{
-					RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
-						{
-							LabelSelector: &metav1.LabelSelector{
-								MatchExpressions: []metav1.LabelSelectorRequirement{
-									{Key: "name", Operator: metav1.LabelSelectorOpIn, Values: []string{clientDeploymentName}},
-								},
-							},
-							TopologyKey: "kubernetes.io/hostname",
-						},
-					},
-				},
-			},
-			Tolerations:    ct.params.GlobalTolerations,
-			ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
-		}, ct.params.DNSTestServerImage)
-		_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(echoSameNodeDeploymentName), metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("unable to create service account %s: %s", echoSameNodeDeploymentName, err)
-		}
-		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, echoDeployment, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("unable to create deployment %s: %s", echoSameNodeDeploymentName, err)
-		}
-	}
-
 	if ct.params.Perf {
 		// For performance workloads, we want to ensure the client/server are in the same zone
 		// If a zone has > 1 node, use that zone
@@ -512,6 +397,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 					},
 				},
 				HostNetwork: ct.params.PerfHostNet,
+				Tolerations: ct.params.GlobalTolerations,
 			})
 			_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(nm.ClientName()), metav1.CreateOptions{})
 			if err != nil {
@@ -743,13 +629,12 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying %s deployment...", ct.clients.src.ClusterName(), clientDeploymentName)
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:        clientDeploymentName,
-			Kind:        kindClientName,
-			NamedPort:   "http-8080",
-			Port:        8080,
-			Image:       ct.params.CurlImage,
-			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
-			Tolerations: ct.params.GlobalTolerations,
+			Name:      clientDeploymentName,
+			Kind:      kindClientName,
+			NamedPort: "http-8080",
+			Port:      8080,
+			Image:     ct.params.CurlImage,
+			Command:   []string{"/bin/ash", "-c", "sleep 10000000"},
 		})
 		_, err = ct.clients.src.CreateServiceAccount(ctx, ct.params.TestNamespace, k8s.NewServiceAccount(clientDeploymentName), metav1.CreateOptions{})
 		if err != nil {
