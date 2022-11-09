@@ -471,6 +471,7 @@ func (ct *ConnectivityTest) initClients(ctx context.Context) error {
 // initCiliumPods fetches the Cilium agent pod information from all clients
 func (ct *ConnectivityTest) initCiliumPods(ctx context.Context) error {
 	for _, client := range ct.clients.clients() {
+		// TODO(jared.ledvina) - This should only select cilium pods on nodes running the pods in the 'cilium-test' namespace.
 		ciliumPods, err := client.ListPods(ctx, ct.params.CiliumNamespace, metav1.ListOptions{LabelSelector: ct.params.AgentPodSelector})
 		if err != nil {
 			return fmt.Errorf("unable to list Cilium pods: %w", err)
