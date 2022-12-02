@@ -76,6 +76,11 @@ func (t *Test) waitCiliumPolicyRevisions(ctx context.Context, revisions map[Pod]
 			delete(revisions, pod)
 		}
 	}
+
+	// TODO(jared.ledvina): Manual sleep to work around race
+	t.Debug("Waiting 5 seconds for CiliumNetworkPolicy change has taken effect")
+	time.Sleep(5 * time.Second)
+
 	if len(revisions) == 0 {
 		return nil
 	}
