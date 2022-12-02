@@ -178,7 +178,7 @@ func (k *K8sStatusCollector) podCount(ctx context.Context, status *Status) error
 
 	if pods != nil && len(pods.Items) != 0 {
 		for _, pod := range pods.Items {
-			if !pod.Spec.HostNetwork {
+			if !pod.Spec.HostNetwork && (pod.Status.Phase == corev1.PodRunning || pod.Status.Phase == corev1.PodPending) {
 				numberAllPod++
 			}
 		}
@@ -483,7 +483,7 @@ func (k *K8sStatusCollector) status(ctx context.Context) *Status {
 
 	// for the sake of sanity, don't get pod logs more than once
 	var agentLogsOnce = sync.Once{}
-	err := k.podStatus(ctx, status, defaults.AgentDaemonSetName, "k8s-app=cilium", func(ctx context.Context, status *Status, name string, pod *corev1.Pod) {
+	err := k.podStatus(ctx, status, defaults.AgentDaemonSetName, defaults.AgentPodSelector, func(ctx context.Context, status *Status, name string, pod *corev1.Pod) {
 		if pod.Status.Phase == corev1.PodRunning {
 			// extract container status
 			var containerStatus *corev1.ContainerStatus

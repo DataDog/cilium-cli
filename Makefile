@@ -13,7 +13,7 @@ TEST_TIMEOUT ?= 5s
 RELEASE_UID ?= $(shell id -u)
 RELEASE_GID ?= $(shell id -g)
 
-GOLANGCILINT_WANT_VERSION = 1.49.0
+GOLANGCILINT_WANT_VERSION = 1.50.1
 GOLANGCILINT_VERSION = $(shell golangci-lint version 2>/dev/null)
 
 $(TARGET):
@@ -27,11 +27,9 @@ release:
 	docker run \
 		--rm \
 		--workdir /cilium \
-		--volume `pwd`:/cilium docker.io/library/golang:1.19.1-alpine3.16 \
-		sh -c "apk add --no-cache make git && \
-			addgroup -g $(RELEASE_GID) release && \
-			adduser -u $(RELEASE_UID) -D -G release release && \
-			su release -c 'make local-release VERSION=${VERSION}'"
+		--volume `pwd`:/cilium docker.io/library/golang:1.19.3-alpine3.16 \
+		sh -c "apk add --no-cache setpriv make git && \
+			/usr/bin/setpriv --reuid=$(RELEASE_UID) --regid=$(RELEASE_GID) --clear-groups make GOCACHE=/tmp/gocache local-release"
 
 local-release: clean
 	set -o errexit; \
@@ -53,11 +51,13 @@ local-release: clean
 		for ARCH in $$ARCHS; do \
 			echo Building release binary for $$OS/$$ARCH...; \
 			test -d release/$$OS/$$ARCH|| mkdir -p release/$$OS/$$ARCH; \
-			env GOOS=$$OS GOARCH=$$ARCH $(GO_BUILD) $(if $(GO_TAGS),-tags $(GO_TAGS)) -ldflags "-w -s -X 'github.com/cilium/cilium-cli/internal/cli/cmd.Version=${VERSION}'" -o release/$$OS/$$ARCH/$(TARGET)$$EXT ./cmd/cilium; \
+			env GOOS=$$OS GOARCH=$$ARCH $(GO_BUILD) $(if $(GO_TAGS),-tags $(GO_TAGS)) \
+				-ldflags "-w -s -X 'github.com/cilium/cilium-cli/internal/cli/cmd.Version=${VERSION}'" \
+				-o release/$$OS/$$ARCH/$(TARGET)$$EXT ./cmd/cilium; \
 			tar -czf release/$(TARGET)-$$OS-$$ARCH.tar.gz -C release/$$OS/$$ARCH $(TARGET)$$EXT; \
 			(cd release && sha256sum $(TARGET)-$$OS-$$ARCH.tar.gz > $(TARGET)-$$OS-$$ARCH.tar.gz.sha256sum); \
 		done; \
-		rm -r release/$$OS; \
+		rm -rf release/$$OS; \
 	done; \
 
 install: $(TARGET)

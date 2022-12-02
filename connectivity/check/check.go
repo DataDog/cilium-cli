@@ -16,6 +16,7 @@ import (
 
 	"github.com/cilium/cilium-cli/connectivity/filters"
 	"github.com/cilium/cilium-cli/k8s"
+	"github.com/cilium/cilium-cli/sysdump"
 )
 
 type Parameters struct {
@@ -52,6 +53,15 @@ type Parameters struct {
 	Datapath              bool
 	GlobalTolerations     []corev1.Toleration
 	AgentPodSelector      string
+
+	K8sVersion           string
+	HelmChartDirectory   string
+	HelmValuesSecretName string
+
+	DeleteCiliumOnNodes []string
+
+	CollectSysdumpOnFailure bool
+	SysdumpOptions          sysdump.Options
 }
 
 func (p Parameters) ciliumEndpointTimeout() time.Duration {

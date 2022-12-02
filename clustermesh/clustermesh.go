@@ -24,11 +24,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	"github.com/blang/semver/v4"
 	"github.com/cilium/cilium/api/v1/models"
 	ciliumv2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	"github.com/cilium/cilium/pkg/versioncheck"
 
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/internal/certs"
+	"github.com/cilium/cilium-cli/internal/helm"
 	"github.com/cilium/cilium-cli/internal/utils"
 	"github.com/cilium/cilium-cli/k8s"
 	"github.com/cilium/cilium-cli/status"
@@ -428,6 +431,7 @@ type k8sClusterMeshImplementation interface {
 	ListCiliumEndpoints(ctx context.Context, namespace string, options metav1.ListOptions) (*ciliumv2.CiliumEndpointList, error)
 	GetPlatform(ctx context.Context) (*k8s.Platform, error)
 	CiliumLogs(ctx context.Context, namespace, pod string, since time.Time, filter *regexp.Regexp) (string, error)
+	GetHelmState(ctx context.Context, namespace string, secretName string) (*helm.State, error)
 }
 
 type K8sClusterMesh struct {
@@ -461,6 +465,7 @@ type Parameters struct {
 	All                  bool
 	ConfigOverwrites     []string
 	Retries              int
+	HelmValuesSecretName string
 }
 
 func (p Parameters) validateParams() error {
@@ -1212,7 +1217,7 @@ func (k *K8sClusterMesh) determineStatusConnectivity(ctx context.Context) (*Conn
 		Clusters:       map[string]*ClusterStats{},
 	}
 
-	pods, err := k.client.ListPods(ctx, k.params.Namespace, metav1.ListOptions{LabelSelector: "k8s-app=cilium"})
+	pods, err := k.client.ListPods(ctx, k.params.Namespace, metav1.ListOptions{LabelSelector: defaults.AgentPodSelector})
 	if err != nil {
 		return nil, fmt.Errorf("unable to list cilium pods: %w", err)
 	}
@@ -1482,7 +1487,7 @@ endpoints:
 - https://clustermesh-apiserver.cilium.io:$CLUSTER_PORT
 EOF
 
-CILIUM_OPTS=" --join-cluster --enable-host-reachable-services --enable-endpoint-health-checking=false"
+CILIUM_OPTS=" --join-cluster %[8]s --enable-endpoint-health-checking=false"
 CILIUM_OPTS+=" --kvstore etcd --kvstore-opt etcd.config=/var/lib/cilium/etcd/config.yaml"
 if [ -n "$HOST_IP" ] ; then
     CILIUM_OPTS+=" --ipv4-node $HOST_IP"
@@ -1623,11 +1628,35 @@ func (k *K8sClusterMesh) WriteExternalWorkloadInstallScript(ctx context.Context,
 		k.params.Retries = 1
 	}
 
+	var ciliumVer semver.Version
+
+	helmState, err := k.client.GetHelmState(ctx, k.params.Namespace, k.params.HelmValuesSecretName)
+	if err != nil {
+		// Try to retrieve version from image tag
+		v, err := k.client.GetRunningCiliumVersion(ctx, k.params.Namespace)
+		if err != nil {
+			return err
+		}
+		ciliumVer, err = utils.ParseCiliumVersion(v)
+		if err != nil {
+			return fmt.Errorf("failed to parse Cilium version %s: %w", v, err)
+		}
+
+	} else {
+		ciliumVer = helmState.Version
+	}
+
+	sockLBOpt := "--bpf-lb-sock"
+	if ciliumVer.LT(versioncheck.MustVersion("1.12.0")) {
+		// Before 1.12, the socket LB was enabled via --enable-host-reachable-services flag
+		sockLBOpt = "--enable-host-reachable-services"
+	}
+
 	fmt.Fprintf(writer, installScriptFmt,
 		daemonSet.Spec.Template.Spec.Containers[0].Image, clusterAddr,
 		configOverwrites,
 		string(ai.CA), string(ai.ExternalWorkloadCert), string(ai.ExternalWorkloadKey),
-		strconv.Itoa(k.params.Retries))
+		strconv.Itoa(k.params.Retries), sockLBOpt)
 	return nil
 }
 

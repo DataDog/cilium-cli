@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/cilium/cilium-cli/k8s"
@@ -173,10 +174,17 @@ func (k *K8sInstaller) autodetectAndValidate(ctx context.Context) error {
 }
 
 func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context) error {
+	if k.params.UserSetKubeProxyReplacement {
+		return nil
+	} else if k.flavor.Kind == k8s.KindK3s {
+		return nil
+	}
+
 	kubeSysNameSpace := "kube-system"
+
 	dsList, err := k.client.ListDaemonSet(ctx, kubeSysNameSpace, metav1.ListOptions{})
 	if err != nil {
-		k.Log("⏭️ Skipping auto kube-proxy detction")
+		k.Log("⏭️ Skipping auto kube-proxy detection")
 		return nil
 	}
 
@@ -187,6 +195,38 @@ func (k *K8sInstaller) autodetectKubeProxy(ctx context.Context) error {
 		}
 	}
 	apiServerHost, apiServerPort := k.client.GetAPIServerHostAndPort()
+	if k.flavor.Kind == k8s.KindKind {
+		k.Log("ℹ️ Detecting real Kubernetes API server addr and port on Kind")
+
+		// When we are using Kind, the API server addr & port is port forwarded
+		eps, err := k.client.GetEndpoints(ctx, "default", "kubernetes", metav1.GetOptions{})
+		if err != nil {
+			k.Log("❌ Couldn't find 'kubernetes' service endpoint on Kind")
+			return fmt.Errorf("failed to detect API server endpoint")
+		}
+
+		if len(eps.Subsets) != 0 {
+			subset := eps.Subsets[0]
+
+			if len(subset.Addresses) != 0 {
+				apiServerHost = subset.Addresses[0].IP
+			} else {
+				k.Log("❌ Couldn't find endpoint address of the 'kubernetes' service endpoint on Kind")
+				return fmt.Errorf("failed to detect API server address")
+			}
+
+			if len(subset.Ports) != 0 {
+				apiServerPort = strconv.FormatInt(int64(subset.Ports[0].Port), 10)
+			} else {
+				k.Log("❌ Couldn't find endpoint port of the 'kubernetes' service endpoint on Kind")
+				return fmt.Errorf("failed to detect API server address")
+			}
+		} else {
+			k.Log("❌ Couldn't find 'kubernetes' service endpoint subset on Kind")
+			return fmt.Errorf("failed to detect API server endpoint")
+		}
+	}
+
 	if apiServerHost != "" && apiServerPort != "" {
 		k.Log("🔮 Auto-detected kube-proxy has not been installed")
 		k.Log("ℹ️ Cilium will fully replace all functionalities of kube-proxy")

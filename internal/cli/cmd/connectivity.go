@@ -20,6 +20,7 @@ import (
 	"github.com/cilium/cilium-cli/connectivity"
 	"github.com/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium-cli/defaults"
+	"github.com/cilium/cilium-cli/sysdump"
 )
 
 var errInternal = errors.New("encountered internal error, exiting")
@@ -37,7 +38,12 @@ func newCmdConnectivity() *cobra.Command {
 }
 
 var params = check.Parameters{
-	Writer:            os.Stdout,
+	Writer: os.Stdout,
+	SysdumpOptions: sysdump.Options{
+		LargeSysdumpAbortTimeout: sysdump.DefaultLargeSysdumpAbortTimeout,
+		LargeSysdumpThreshold:    sysdump.DefaultLargeSysdumpThreshold,
+		Writer:                   os.Stdout,
+	},
 	GlobalTolerations: []corev1.Toleration{},
 }
 var tests []string
@@ -96,7 +102,7 @@ func newCmdConnectivityTest() *cobra.Command {
 			}
 
 			// Instantiate the test harness.
-			cc, err := check.NewConnectivityTest(k8sClient, params)
+			cc, err := check.NewConnectivityTest(k8sClient, params, Version)
 			if err != nil {
 				return err
 			}
@@ -155,18 +161,30 @@ func newCmdConnectivityTest() *cobra.Command {
 	cmd.Flags().BoolVarP(&params.Timestamp, "timestamp", "t", false, "Show timestamp in messages")
 	cmd.Flags().BoolVarP(&params.PauseOnFail, "pause-on-fail", "p", false, "Pause execution on test failure")
 	cmd.Flags().BoolVar(&params.SkipIPCacheCheck, "skip-ip-cache-check", true, "Skip IPCache check")
+	cmd.Flags().MarkHidden("skip-ip-cache-check")
+	cmd.Flags().BoolVar(&params.Datapath, "datapath", false, "Run datapath conformance tests")
+	cmd.Flags().MarkHidden("datapath")
+
+	cmd.Flags().StringVar(&params.K8sVersion, "k8s-version", "", "Kubernetes server version in case auto-detection fails")
+	cmd.Flags().StringVar(&params.HelmChartDirectory, "chart-directory", "", "Helm chart directory")
+	cmd.Flags().StringVar(&params.HelmValuesSecretName, "helm-values-secret-name", defaults.HelmValuesSecretName, "Secret name to store the auto-generated helm values file. The namespace is the same as where Cilium will be installed")
+
+	cmd.Flags().StringSliceVar(&params.DeleteCiliumOnNodes, "delete-cilium-pod-on-nodes", []string{}, "List of node names from which Cilium pods will be delete before running tests")
+
 	cmd.Flags().BoolVar(&params.Perf, "perf", false, "Run network Performance tests")
 	cmd.Flags().DurationVar(&params.PerfDuration, "perf-duration", 10*time.Second, "Duration for the Performance test to run")
 	cmd.Flags().IntVar(&params.PerfSamples, "perf-samples", 1, "Number of Performance samples to capture (how many times to run each test)")
 	cmd.Flags().BoolVar(&params.PerfCRR, "perf-crr", false, "Run Netperf CRR Test. --perf-samples and --perf-duration ignored")
 	cmd.Flags().BoolVar(&params.PerfHostNet, "host-net", false, "Use host networking during network performance tests")
-	cmd.Flags().MarkHidden("skip-ip-cache-check")
+
 	cmd.Flags().StringVar(&params.CurlImage, "curl-image", defaults.ConnectivityCheckAlpineCurlImage, "Image path to use for curl")
 	cmd.Flags().StringVar(&params.PerformanceImage, "performance-image", defaults.ConnectivityPerformanceImage, "Image path to use for performance")
 	cmd.Flags().StringVar(&params.JSONMockImage, "json-mock-image", defaults.ConnectivityCheckJSONMockImage, "Image path to use for json mock")
 	cmd.Flags().StringVar(&params.DNSTestServerImage, "dns-test-server-image", defaults.ConnectivityDNSTestServerImage, "Image path to use for CoreDNS")
-	cmd.Flags().BoolVar(&params.Datapath, "datapath", false, "Run datapath conformance tests")
-	cmd.Flags().MarkHidden("datapath")
+
+	cmd.Flags().BoolVar(&params.CollectSysdumpOnFailure, "collect-sysdump-on-failure", false, "Collect sysdump after a test fails")
+
+	initSysdumpFlags(cmd, &params.SysdumpOptions, "sysdump-")
 
 	return cmd
 }

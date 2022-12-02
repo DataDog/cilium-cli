@@ -7,10 +7,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
+	"github.com/cilium/cilium-cli/connectivity/check"
 	"github.com/cilium/cilium-cli/defaults"
 	"github.com/cilium/cilium-cli/hubble"
 	"github.com/cilium/cilium-cli/install"
@@ -34,6 +37,14 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params.Namespace = namespace
+
+			cmd.Flags().Visit(func(f *pflag.Flag) {
+				if f.Name == "kube-proxy-replacement" {
+					params.UserSetKubeProxyReplacement = true
+				} else if f.Name == "helm-set" && strings.Contains(f.Value.String(), "kubeProxyReplacement") {
+					params.UserSetKubeProxyReplacement = true
+				}
+			})
 
 			installer, err := install.NewK8sInstaller(k8sClient, params)
 			if err != nil {
@@ -66,7 +77,7 @@ cilium install --context kind-cluster1 --cluster-id 1 --cluster-name cluster1
 	cmd.Flags().MarkDeprecated("cluster-id", "This can now be overridden via `helm-set` (Helm value: `cluster.id`).")
 	cmd.Flags().StringVar(&params.InheritCA, "inherit-ca", "", "Inherit/import CA from another cluster")
 	// It can be deprecated since we have a helm option for it
-	cmd.Flags().StringVar(&params.KubeProxyReplacement, "kube-proxy-replacement", "disabled", "Enable/disable kube-proxy replacement { disabled | probe | strict }")
+	cmd.Flags().StringVar(&params.KubeProxyReplacement, "kube-proxy-replacement", "disabled", "Enable/disable kube-proxy replacement { disabled | partial | strict }")
 	cmd.Flags().MarkDeprecated("kube-proxy-replacement", "This can now be overridden via `helm-set` (Helm value: `kubeProxyReplacement`).")
 	cmd.Flags().BoolVar(&params.Wait, "wait", true, "Wait for status to report success (no errors)")
 	cmd.Flags().DurationVar(&params.WaitDuration, "wait-duration", defaults.StatusWaitDuration, "Maximum time to wait for status")
@@ -137,6 +148,18 @@ func newCmdUninstall() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params.Namespace = namespace
 			ctx := context.Background()
+
+			cc, err := check.NewConnectivityTest(k8sClient, check.Parameters{
+				CiliumNamespace: namespace,
+				TestNamespace:   params.TestNamespace,
+				FlowValidation:  check.FlowValidationModeDisabled,
+				Writer:          os.Stdout,
+			}, Version)
+			if err != nil {
+				fmt.Printf("⚠ ️ Failed to initialize connectivity test uninstaller: %s", err)
+			} else {
+				cc.UninstallResources(ctx, params.Wait)
+			}
 
 			h, err := hubble.NewK8sHubble(ctx,
 				k8sClient, hubble.Parameters{

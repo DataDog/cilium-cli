@@ -171,6 +171,7 @@ type k8sInstallerImplementation interface {
 	DeleteDaemonSet(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	PatchDaemonSet(ctx context.Context, namespace, name string, pt types.PatchType, data []byte, opts metav1.PatchOptions) (*appsv1.DaemonSet, error)
 	GetService(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Service, error)
+	GetEndpoints(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Endpoints, error)
 	CreateService(ctx context.Context, namespace string, service *corev1.Service, opts metav1.CreateOptions) (*corev1.Service, error)
 	DeleteService(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
 	DeleteDeployment(ctx context.Context, namespace, name string, opts metav1.DeleteOptions) error
@@ -202,6 +203,7 @@ type k8sInstallerImplementation interface {
 	DeleteIngressClass(ctx context.Context, name string, opts metav1.DeleteOptions) error
 	CiliumLogs(ctx context.Context, namespace, pod string, since time.Time, filter *regexp.Regexp) (string, error)
 	ListAPIResources(ctx context.Context) ([]string, error)
+	GetHelmState(ctx context.Context, namespace string, secretName string) (*helm.State, error)
 }
 
 type K8sInstaller struct {
@@ -316,6 +318,8 @@ type Parameters struct {
 	// APIVersions defines extra kubernetes api resources that can be passed to helm for capabilities validation,
 	// specifically for CRDs.
 	APIVersions []string
+	// UserSetKubeProxyReplacement will be set as true if user passes helm opt or commadline flag for the Kube-Proxy replacement.
+	UserSetKubeProxyReplacement bool
 }
 
 type rollbackStep func(context.Context)
@@ -691,10 +695,9 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 	}
 
 	for _, nodeName := range k.params.NodesWithoutCilium {
-		k.Log("🚀 Setting \"cilium.io/no-schedule=true\" label for %q node to prevent from scheduling Cilium on it...",
-			nodeName)
-		// "~1" is the json patch escape symbol for "/"
-		labelPatch := `[{"op":"add","path":"/metadata/labels/cilium.io~1no-schedule","value":"true"}]`
+		k.Log("🚀 Setting label %q on node %q to prevent Cilium from being scheduled on it...", defaults.CiliumNoScheduleLabel, nodeName)
+		label := utils.EscapeJSONPatchString(defaults.CiliumNoScheduleLabel)
+		labelPatch := fmt.Sprintf(`[{"op":"add","path":"/metadata/labels/%s","value":"true"}]`, label)
 		_, err = k.client.PatchNode(ctx, nodeName, types.JSONPatchType, []byte(labelPatch))
 		if err != nil {
 			return err
@@ -786,31 +789,33 @@ func (k *K8sInstaller) Install(ctx context.Context) error {
 				k.Log("Cannot delete %s Namespace: %s", secretsNamespace, err)
 			}
 		})
+	}
 
-		for _, roleName := range []string{defaults.AgentSecretsRoleName, defaults.OperatorSecretsRoleName} {
-			r := k.NewRole(roleName)
-			if r == nil {
-				continue
-			}
+	for _, roleName := range []string{defaults.AgentSecretsRoleName, defaults.OperatorSecretsRoleName} {
+		rs := k.NewRole(roleName)
 
-			_, err = k.client.CreateRole(ctx, secretsNamespace, r, metav1.CreateOptions{})
+		for _, r := range rs {
+			_, err = k.client.CreateRole(ctx, r.GetNamespace(), r, metav1.CreateOptions{})
 			if err != nil {
 				return err
 			}
 
 			k.pushRollbackStep(func(ctx context.Context) {
-				if err := k.client.DeleteRole(ctx, secretsNamespace, r.GetName(), metav1.DeleteOptions{}); err != nil {
+				if err := k.client.DeleteRole(ctx, r.GetNamespace(), r.GetName(), metav1.DeleteOptions{}); err != nil {
 					k.Log("Cannot delete %s Role: %s", r.GetName(), err)
 				}
 			})
+		}
 
-			rb, err := k.client.CreateRoleBinding(ctx, secretsNamespace, k.NewRoleBinding(roleName), metav1.CreateOptions{})
+		rbs := k.NewRoleBinding(roleName)
+		for _, rb := range rbs {
+			rb, err := k.client.CreateRoleBinding(ctx, rb.GetNamespace(), rb, metav1.CreateOptions{})
 			if err != nil {
 				return err
 			}
 			k.pushRollbackStep(func(ctx context.Context) {
-				if err := k.client.DeleteRoleBinding(ctx, secretsNamespace, rb.GetName(), metav1.DeleteOptions{}); err != nil {
-					k.Log("Cannot delete %s RoleBinding: %s", rb.GetName(), err)
+				if err := k.client.DeleteRoleBinding(ctx, rb.GetNamespace(), rb.GetName(), metav1.DeleteOptions{}); err != nil {
+					k.Log("Cannot delete %s RoleBinding: %s/%s", rb.GetNamespace(), rb.GetName(), err)
 				}
 			})
 		}

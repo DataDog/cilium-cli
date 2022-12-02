@@ -134,21 +134,28 @@ func (a *Action) Run(f func(*Action)) {
 		// Channel for the flow listener to notify us when ready.
 		ready := make(chan bool, 1)
 
+		wg := sync.WaitGroup{}
+		wg.Add(1)
 		// TODO(timo): Use an actual context that can be cancelled by the user.
 		// `Run()` should take context.
 		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		defer func() {
+			cancel()
+			wg.Wait()
+		}()
 
 		// Start flow listener in the background.
 		go func() {
+			defer wg.Done()
 			if err := a.followFlows(ctx, ready); err != nil {
 				a.Fatalf("Receiving flows from Hubble Relay: %s", err)
 			}
+			a.Debug("Receiving flows from Hubble Relay gracefully closed down.")
 		}()
 
 		// Wait for at least one Hubble node to signal that it's ready so we don't
 		// generate any traffic before it can be captured.
-		timeout := time.NewTimer(10 * time.Second)
+		timeout := time.NewTimer(30 * time.Second)
 		defer timeout.Stop()
 
 		select {
@@ -171,9 +178,15 @@ func (a *Action) Run(f func(*Action)) {
 		a.printFlows(a.Source())
 		a.printFlows(a.Destination())
 	}
-	if a.failed && a.test.ctx.params.PauseOnFail {
-		a.Log("Pausing after action failure, press the Enter key to continue:")
-		fmt.Scanln()
+	if a.failed {
+		if a.test.ctx.params.PauseOnFail {
+			a.Log("Pausing after action failure, press the Enter key to continue:")
+			fmt.Scanln()
+		}
+
+		if a.test.ctx.params.CollectSysdumpOnFailure {
+			a.test.collectSysdump()
+		}
 	}
 }
 
@@ -717,11 +730,13 @@ func (a *Action) followFlows(ctx context.Context, ready chan bool) error {
 			if errors.Is(err, io.EOF) ||
 				errors.Is(err, context.Canceled) ||
 				errors.Is(err, context.DeadlineExceeded) {
+				a.Debugf("Hubble polling ended: %v", err)
 				return nil
 			}
 
 			// Return gracefully on 'canceled' gRPC error.
 			if status.Code(err) == codes.Canceled {
+				a.Debugf("Hubble polling ended: %v", err)
 				return nil
 			}
 

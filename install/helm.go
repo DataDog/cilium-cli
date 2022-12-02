@@ -49,9 +49,8 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 			// version from being used as the operator tag by Cilium Helm charts.
 			// This also makes k8s pod list to actually contain the image tag.
 			if imageTag == "" {
-				k.Log("ℹ️  Defaulting image tag to \"latest\" due to \"--image-suffix\" option")
-
 				imageTag = "latest"
+				k.Log("ℹ️  Defaulting image tag to %q due to --image-suffix option", imageTag)
 			}
 			colonTag := ":" + imageTag
 			helmMapOpts["image.override"] = fmt.Sprintf("quay.io/cilium/cilium%s%s", imageSuffix, colonTag)
@@ -227,7 +226,7 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 
 		// TODO: remove when removing "kube-proxy-replacement" flag (marked as
 		// deprecated), kept for backwards compatibility
-		if k.params.KubeProxyReplacement != "" {
+		if k.params.KubeProxyReplacement != "" && k.params.UserSetKubeProxyReplacement {
 			helmMapOpts["kubeProxyReplacement"] = k.params.KubeProxyReplacement
 		}
 
@@ -257,9 +256,9 @@ func (k *K8sInstaller) generateManifests(ctx context.Context) error {
 	// Set affinity to prevent Cilium from being scheduled on nodes labeled with
 	// "cilium.io/no-schedule=true"
 	if len(k.params.NodesWithoutCilium) != 0 {
-		helmMapOpts["affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key"] = "cilium.io/no-schedule"
-		helmMapOpts["affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator"] = "NotIn"
-		helmMapOpts["affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]"] = "true"
+		for k, v := range defaults.CiliumScheduleAffinity {
+			helmMapOpts[k] = v
+		}
 	}
 
 	// Store all the options passed by --config into helm extraConfig

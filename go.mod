@@ -13,23 +13,23 @@ replace (
 
 require (
 	github.com/blang/semver/v4 v4.0.0
-	github.com/cilium/charts v0.0.0-20221101134122-c573429146d5
+	github.com/cilium/charts v0.0.0-20221201145057-eccd916fa30d
 	github.com/cilium/cilium v1.12.2
 	github.com/cilium/hubble v0.10.0
 	github.com/cilium/proxy v0.0.0-20220803100640-5739e4be8ae7
 	github.com/cilium/workerpool v1.1.3
 	github.com/cloudflare/cfssl v1.6.3
 	github.com/go-openapi/strfmt v0.21.3
-	github.com/google/gops v0.3.25
+	github.com/google/gops v0.3.26
 	github.com/mholt/archiver/v3 v3.5.1
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/pflag v1.0.6-0.20200504143853-81378bbcd8a1
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
-	google.golang.org/grpc v1.50.1
+	google.golang.org/grpc v1.51.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
-	helm.sh/helm/v3 v3.10.1
+	helm.sh/helm/v3 v3.10.2
 	k8s.io/api v0.25.3
 	k8s.io/apimachinery v0.25.3
 	k8s.io/cli-runtime v0.25.3
@@ -114,7 +114,7 @@ require (
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/certificate-transparency-go v1.1.2-0.20210511102531-373a877eec92 // indirect
 	github.com/google/gnostic v0.5.7-v3refs // indirect
-	github.com/google/go-cmp v0.5.8 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.3.0 // indirect
@@ -185,7 +185,7 @@ require (
 	github.com/russross/blackfriday v1.5.2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
-	github.com/shirou/gopsutil/v3 v3.22.5 // indirect
+	github.com/shirou/gopsutil/v3 v3.22.10 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
@@ -241,7 +241,7 @@ require (
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
 	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	google.golang.org/appengine v1.6.7 // indirect

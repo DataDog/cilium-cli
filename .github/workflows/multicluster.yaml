@@ -28,6 +28,7 @@ concurrency:
 env:
   clusterName1: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh-1
   clusterName2: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh-2
+  clusterNameBase: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-mesh
   zone: us-west2-a
   firewallRuleName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-rule
   cilium_version: v1.12.2
@@ -53,12 +54,12 @@ jobs:
 
       - name: Set up gcloud credentials
         id: 'auth'
-        uses: 'google-github-actions/auth@c4799db9111fba4461e9f9da8732e5057b394f72'
+        uses: 'google-github-actions/auth@ef5d53e30bbcd8d0836f4288f5e50ff3e086997d'
         with:
           credentials_json: '${{ secrets.GCP_PR_SA_KEY }}'
 
       - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@ee9693ff89cdf73862b8a13988f6a71070e8fc58
+        uses: google-github-actions/setup-gcloud@d51b5346f85640ec2aa2fa057354d2b82c2fcbce
         with:
           project_id: ${{ secrets.GCP_PR_PROJECT_ID }}
           version: "405.0.0"
@@ -74,7 +75,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@c4a742cab115ed795e34d4513e2cf7d472deb55f
         with:
-          go-version: 1.19.1
+          go-version: 1.19.3
 
       - name: Set up job variables
         id: vars
@@ -217,10 +218,13 @@ jobs:
       - name: Clean up GKE
         if: ${{ always() }}
         run: |
-          gcloud compute firewall-rules delete ${{ env.firewallRuleName }} --quiet
+          while [ "$(gcloud container operations list --filter="status=RUNNING AND targetLink~${{ env.clusterNameBase }}" --format="value(name)")" ];do
+            echo "cluster has an ongoing operation, waiting for all operations to finish"; sleep 15
+          done
           gcloud container clusters delete ${{ env.clusterName1 }} --zone ${{ env.zone }} --quiet --async
           gcloud container clusters delete ${{ env.clusterName2 }} --zone ${{ env.zone }} --quiet --async
-        shell: bash {0} # Disable default fail-fast behaviour so that all commands run independently
+          gcloud compute firewall-rules delete ${{ env.firewallRuleName }} --quiet
+        shell: bash {0} # Disable default fail-fast behavior so that all commands run independently
 
       - name: Upload artifacts
         if: ${{ !success() }}

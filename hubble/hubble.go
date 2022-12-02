@@ -185,7 +185,7 @@ func NewK8sHubble(ctx context.Context, client k8sHubbleImplementation, p Paramet
 		// if cilium-cli-helm-values secret was not found (e.g. cilium was not installed with cilium-cli)
 		// or the secret parsing failed for whatever reason, then we create a default helm state.
 		k.Log("⚠️  Error parsing helm cli secret: %s", err)
-		k.Log("⚠️  Proceed in unknown install state")
+		k.Log("⚠️  Proceeding in unknown installation state")
 		helmState, err = k.generateDefaultHelmState(ctx, client, p.Namespace)
 		if err != nil {
 			return nil, err
@@ -472,7 +472,7 @@ func (k *K8sHubble) updateConfigMap(ctx context.Context) error {
 		return fmt.Errorf("unable to patch ConfigMap %s with %s: %w", defaults.ConfigMapName, cm, err)
 	}
 
-	if err := k.client.DeletePodCollection(ctx, k.params.Namespace, metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: defaults.CiliumPodSelector}); err != nil {
+	if err := k.client.DeletePodCollection(ctx, k.params.Namespace, metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: defaults.AgentPodSelector}); err != nil {
 		k.Log("⚠️  Unable to restart Cilium pods: %s", err)
 	} else {
 		k.Log("♻️  Restarted Cilium pods")

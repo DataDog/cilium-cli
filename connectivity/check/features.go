@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/cilium/cilium/api/v1/models"
 	"github.com/cilium/cilium/pkg/option"
@@ -203,7 +204,10 @@ func (ct *ConnectivityTest) extractFeaturesFromNodes(ctx context.Context, client
 		}
 	}
 
-	result[FeatureNodeWithoutCilium] = FeatureStatus{Enabled: len(nodes) != 0}
+	result[FeatureNodeWithoutCilium] = FeatureStatus{
+		Enabled: len(nodes) != 0,
+		Mode:    strings.Join(nodes, ","),
+	}
 	ct.nodesWithoutCilium = nodes
 
 	return nil
@@ -338,4 +342,12 @@ func (ct *ConnectivityTest) detectFeatures(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (ct *ConnectivityTest) UpdateFeaturesFromNodes(ctx context.Context) error {
+	return ct.extractFeaturesFromNodes(ctx, ct.client, ct.features)
+}
+
+func (ct *ConnectivityTest) ForceDisableFeature(feature Feature) {
+	ct.features[feature] = FeatureStatus{Enabled: false}
 }

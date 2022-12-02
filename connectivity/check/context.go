@@ -35,6 +35,8 @@ type ConnectivityTest struct {
 	// Parameters to the test suite, specified by the CLI user.
 	params Parameters
 
+	version string
+
 	// Clients for source and destination clusters.
 	clients *deploymentClients
 
@@ -55,6 +57,9 @@ type ConnectivityTest struct {
 	lastFlowTimestamps map[string]time.Time
 
 	nodesWithoutCilium []string
+
+	manifests      map[string]string
+	helmYAMLValues string
 }
 
 type PerfTests struct {
@@ -152,7 +157,7 @@ func (ct *ConnectivityTest) failedActions() []*Action {
 }
 
 // NewConnectivityTest returns a new ConnectivityTest.
-func NewConnectivityTest(client *k8s.Client, p Parameters) (*ConnectivityTest, error) {
+func NewConnectivityTest(client *k8s.Client, p Parameters, version string) (*ConnectivityTest, error) {
 	if err := p.validate(); err != nil {
 		return nil, err
 	}
@@ -160,6 +165,7 @@ func NewConnectivityTest(client *k8s.Client, p Parameters) (*ConnectivityTest, e
 	k := &ConnectivityTest{
 		client:              client,
 		params:              p,
+		version:             version,
 		ciliumPods:          make(map[string]Pod),
 		echoPods:            make(map[string]Pod),
 		clientPods:          make(map[string]Pod),
@@ -267,6 +273,14 @@ func (ct *ConnectivityTest) Run(ctx context.Context) error {
 		return err
 	}
 
+	if len(ct.params.DeleteCiliumOnNodes) > 0 {
+		// Delete Cilium pods so only the datapath plumbing remains
+		ct.Debug("Deleting Cilium pods from specified nodes")
+		if err := ct.deleteCiliumPods(ctx); err != nil {
+			return err
+		}
+	}
+
 	ct.Debug("Registered connectivity tests:")
 	for _, t := range ct.tests {
 		ct.Debugf("  %s", t)
@@ -289,6 +303,9 @@ func (ct *ConnectivityTest) Run(ctx context.Context) error {
 			if err := t.Run(ctx); err != nil {
 				// We know for sure we're inside a separate goroutine, so Fatal()
 				// is safe and will properly record failure statistics.
+				if t.ctx.params.CollectSysdumpOnFailure {
+					t.collectSysdump()
+				}
 				t.Fatalf("Running test %s: %s", t.Name(), err)
 			}
 
@@ -510,6 +527,32 @@ func (ct *ConnectivityTest) DetectMinimumCiliumVersion(ctx context.Context) (*se
 	return minVersion, nil
 }
 
+// UninstallResources deletes all k8s resources created by the connectivity tests.
+func (ct *ConnectivityTest) UninstallResources(ctx context.Context, wait bool) {
+	ct.Logf("🔥 Deleting pods in %s namespace...", ct.params.TestNamespace)
+	ct.client.DeletePodCollection(ctx, ct.params.TestNamespace, metav1.DeleteOptions{}, metav1.ListOptions{})
+
+	ct.Logf("🔥 Deleting %s namespace...", ct.params.TestNamespace)
+	ct.client.DeleteNamespace(ctx, ct.params.TestNamespace, metav1.DeleteOptions{})
+
+	// To avoid cases where test pods are stuck in terminating state because
+	// cni (cilium) pods were deleted sooner, wait until test pods are deleted
+	// before moving onto deleting cilium pods.
+	if wait {
+		ct.Logf("⌛ Waiting for %s namespace to be terminated...", ct.params.TestNamespace)
+		for {
+			// Wait for the test namespace to be terminated. Subsequent connectivity checks would fail
+			// if the test namespace is in Terminating state.
+			_, err := ct.client.GetNamespace(ctx, ct.params.TestNamespace, metav1.GetOptions{})
+			if err == nil {
+				time.Sleep(defaults.WaitRetryInterval)
+			} else {
+				break
+			}
+		}
+	}
+}
+
 func (ct *ConnectivityTest) RandomClientPod() *Pod {
 	for _, p := range ct.clientPods {
 		return &p
@@ -578,7 +621,5 @@ func (ct *ConnectivityTest) K8sClient() *k8s.Client {
 }
 
 func (ct *ConnectivityTest) NodesWithoutCilium() []string {
-	out := make([]string, len(ct.nodesWithoutCilium))
-	copy(out, ct.nodesWithoutCilium)
-	return out
+	return ct.nodesWithoutCilium
 }

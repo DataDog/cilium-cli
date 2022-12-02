@@ -221,6 +221,10 @@ func (c *Client) GetService(ctx context.Context, namespace, name string, opts me
 	return c.Clientset.CoreV1().Services(namespace).Get(ctx, name, opts)
 }
 
+func (c *Client) GetEndpoints(ctx context.Context, namespace, name string, opts metav1.GetOptions) (*corev1.Endpoints, error) {
+	return c.Clientset.CoreV1().Endpoints(namespace).Get(ctx, name, opts)
+}
+
 func (c *Client) CreateDeployment(ctx context.Context, namespace string, deployment *appsv1.Deployment, opts metav1.CreateOptions) (*appsv1.Deployment, error) {
 	return c.Clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, opts)
 }
@@ -795,7 +799,7 @@ func getCiliumVersionFromImage(image string) (string, error) {
 }
 
 func (c *Client) GetRunningCiliumVersion(ctx context.Context, namespace string) (string, error) {
-	pods, err := c.ListPods(ctx, namespace, metav1.ListOptions{LabelSelector: "k8s-app=cilium"})
+	pods, err := c.ListPods(ctx, namespace, metav1.ListOptions{LabelSelector: defaults.AgentPodSelector})
 	if err != nil {
 		return "", fmt.Errorf("unable to list cilium pods: %w", err)
 	}
@@ -814,6 +818,10 @@ func (c *Client) GetRunningCiliumVersion(ctx context.Context, namespace string) 
 
 func (c *Client) ListCiliumEgressNATPolicies(ctx context.Context, opts metav1.ListOptions) (*ciliumv2alpha1.CiliumEgressNATPolicyList, error) {
 	return c.CiliumClientset.CiliumV2alpha1().CiliumEgressNATPolicies().List(ctx, opts)
+}
+
+func (c *Client) ListCiliumEgressGatewayPolicies(ctx context.Context, opts metav1.ListOptions) (*ciliumv2.CiliumEgressGatewayPolicyList, error) {
+	return c.CiliumClientset.CiliumV2().CiliumEgressGatewayPolicies().List(ctx, opts)
 }
 
 func (c *Client) ListCiliumLocalRedirectPolicies(ctx context.Context, namespace string, opts metav1.ListOptions) (*ciliumv2.CiliumLocalRedirectPolicyList, error) {

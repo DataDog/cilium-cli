@@ -66,10 +66,10 @@ const (
 
 	ConnectivityCheckNamespace = "cilium-test"
 
-	ConnectivityCheckAlpineCurlImage = "quay.io/cilium/alpine-curl:v1.5.0@sha256:7b286939730d8af1149ef88dba15739d8330bb83d7d9853a23e5ab4043e2d33c"
-	ConnectivityPerformanceImage     = "quay.io/cilium/network-perf:bf58fb8bc57c4933dfa6e2a9581d3925c0a0571e@sha256:9bef508b2dcaeb3e288a496b8d3f065e8636a4937ba3aebcb1732afffaccea34"
-	ConnectivityCheckJSONMockImage   = "quay.io/cilium/json-mock:v1.3.2@sha256:bc6c46c74efadb135bc996c2467cece6989302371ef4e3f068361460abaf39be"
-	ConnectivityDNSTestServerImage   = "docker.io/coredns/coredns:1.9.4@sha256:b82e294de6be763f73ae71266c8f5466e7e03c69f3a1de96efd570284d35bb18"
+	ConnectivityCheckAlpineCurlImage = "quay.io/cilium/alpine-curl:v1.6.0@sha256:408430f548a8390089b9b83020148b0ef80b0be1beb41a98a8bfe036709c196e"
+	ConnectivityPerformanceImage     = "quay.io/cilium/network-perf:a816f935930cb2b40ba43230643da4d5751a5711@sha256:679d3a370c696f63884da4557a4466f3b5569b4719bb4f86e8aac02fbe390eea"
+	ConnectivityCheckJSONMockImage   = "quay.io/cilium/json-mock:v1.3.3@sha256:f26044a2b8085fcaa8146b6b8bb73556134d7ec3d5782c6a04a058c945924ca0"
+	ConnectivityDNSTestServerImage   = "docker.io/coredns/coredns:1.10.0@sha256:017727efcfeb7d053af68e51436ce8e65edbc6ca573720afb4f79c8594036955"
 
 	ConfigMapName = "cilium-config"
 	Version       = "v1.12.2"
@@ -91,6 +91,8 @@ const (
 	HelmValuesSecretName          = "cilium-cli-helm-values"
 	HelmValuesSecretKeyName       = "io.cilium.cilium-cli"
 	HelmChartVersionSecretKeyName = "io.cilium.chart-version"
+
+	CiliumNoScheduleLabel = "cilium.io/no-schedule"
 )
 
 var (
@@ -99,25 +101,30 @@ var (
 		"k8s-app": "clustermesh-apiserver",
 	}
 
-	// CiliumPodSelector is the pod selector to be used for the Cilium agents.
-	CiliumPodSelector = "k8s-app=cilium"
-)
+	// HubbleKeys are all hubble values from `cilium-config` configmap:
+	// https://github.com/cilium/cilium/blob/d9a04be9d714e5f5544cbca7ef8db7a151bfce96/install/kubernetes/cilium/templates/cilium-configmap.yaml#L709-L750
+	// this list is used to cherry-pick only hubble related values for configmap patch
+	// when running in unknown install state (i.e. when `cilium-cli-helm-values` doesn't exist)
+	HubbleKeys = []string{
+		"enable-hubble",
+		"hubble-disable-tls",
+		"hubble-event-buffer-capacity",
+		"hubble-event-queue-size",
+		"hubble-flow-buffer-size",
+		"hubble-listen-address",
+		"hubble-metrics",
+		"hubble-metrics-server",
+		"hubble-socket-path",
+		"hubble-tls-cert-file",
+		"hubble-tls-client-ca-files",
+		"hubble-tls-key-file",
+	}
 
-// All hubble values from `cilium-config` configmap:
-// https://github.com/cilium/cilium/blob/d9a04be9d714e5f5544cbca7ef8db7a151bfce96/install/kubernetes/cilium/templates/cilium-configmap.yaml#L709-L750
-// this list is used to cherry-pick only hubble related values for configmap patch
-// when running in unknown install state (i.e. when `cilium-cli-helm-values` doesn't exist)
-var HubbleKeys = []string{
-	"enable-hubble",
-	"hubble-disable-tls",
-	"hubble-event-buffer-capacity",
-	"hubble-event-queue-size",
-	"hubble-flow-buffer-size",
-	"hubble-listen-address",
-	"hubble-metrics",
-	"hubble-metrics-server",
-	"hubble-socket-path",
-	"hubble-tls-cert-file",
-	"hubble-tls-client-ca-files",
-	"hubble-tls-key-file",
-}
+	// CiliumScheduleAffinity is the node affinity to prevent Cilium from being schedule on
+	// nodes labeled with CiliumNoScheduleLabel.
+	CiliumScheduleAffinity = map[string]string{
+		"affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key":       CiliumNoScheduleLabel,
+		"affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator":  "NotIn",
+		"affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]": "true",
+	}
+)
