@@ -210,14 +210,14 @@ var serviceLabels = map[string]string{
 	"kind": kindEchoName,
 }
 
-func newService(name string, selector map[string]string, labels map[string]string, portName string, port int) *corev1.Service {
+func newService(name string, selector map[string]string, labels map[string]string, portName string, port int, serviceType string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
 			Labels: labels,
 		},
 		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeNodePort,
+			Type: corev1.ServiceType(serviceType),
 			Ports: []corev1.ServicePort{
 				{Name: portName, Port: int32(port)},
 			},
@@ -280,7 +280,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	_, err = ct.clients.src.GetService(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.GetOptions{})
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying echo-same-node service...", ct.clients.src.ClusterName())
-		svc := newService(echoSameNodeDeploymentName, map[string]string{"name": echoSameNodeDeploymentName}, serviceLabels, "http", 8080)
+		svc := newService(echoSameNodeDeploymentName, map[string]string{"name": echoSameNodeDeploymentName}, serviceLabels, "http", 8080, ct.Params().ServiceType)
 		_, err = ct.clients.src.CreateService(ctx, ct.params.TestNamespace, svc, metav1.CreateOptions{})
 		if err != nil {
 			return err
@@ -291,7 +291,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		_, err = ct.clients.src.GetService(ctx, ct.params.TestNamespace, echoOtherNodeDeploymentName, metav1.GetOptions{})
 		if err != nil {
 			ct.Logf("✨ [%s] Deploying echo-other-node service...", ct.clients.src.ClusterName())
-			svc := newService(echoOtherNodeDeploymentName, map[string]string{"name": echoOtherNodeDeploymentName}, serviceLabels, "http", 8080)
+			svc := newService(echoOtherNodeDeploymentName, map[string]string{"name": echoOtherNodeDeploymentName}, serviceLabels, "http", 8080, ct.Params().ServiceType)
 			svc.ObjectMeta.Annotations = map[string]string{}
 			svc.ObjectMeta.Annotations["io.cilium/global-service"] = "true"
 
@@ -575,7 +575,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		_, err = ct.clients.dst.GetService(ctx, ct.params.TestNamespace, echoOtherNodeDeploymentName, metav1.GetOptions{})
 		if err != nil {
 			ct.Logf("✨ [%s] Deploying echo-other-node service...", ct.clients.dst.ClusterName())
-			svc := newService(echoOtherNodeDeploymentName, map[string]string{"name": echoOtherNodeDeploymentName}, serviceLabels, "http", 8080)
+			svc := newService(echoOtherNodeDeploymentName, map[string]string{"name": echoOtherNodeDeploymentName}, serviceLabels, "http", 8080, ct.Params().ServiceType)
 
 			if ct.params.MultiCluster != "" {
 				svc.ObjectMeta.Annotations = map[string]string{}
