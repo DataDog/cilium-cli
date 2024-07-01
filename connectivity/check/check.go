@@ -41,6 +41,7 @@ type Parameters struct {
 	PerfDuration          time.Duration
 	PerfCRR               bool
 	PerfHostNet           bool
+	ServiceType           string
 	PerfSamples           int
 	CurlImage             string
 	PerformanceImage      string
