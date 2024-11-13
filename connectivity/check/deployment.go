@@ -37,7 +37,6 @@ const (
 
 	DNSTestServerContainerName = "dns-test-server"
 
-	echoSameNodeDeploymentName  = "echo-same-node"
 	echoOtherNodeDeploymentName = "echo-other-node"
 	corednsConfigMapName        = "coredns-configmap"
 	corednsConfigVolumeName     = "coredns-config-volume"
@@ -277,16 +276,6 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 		}
 	}
 
-	_, err = ct.clients.src.GetService(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.GetOptions{})
-	if err != nil {
-		ct.Logf("✨ [%s] Deploying echo-same-node service...", ct.clients.src.ClusterName())
-		svc := newService(echoSameNodeDeploymentName, map[string]string{"name": echoSameNodeDeploymentName}, serviceLabels, "http", 8080, ct.Params().ServiceType)
-		_, err = ct.clients.src.CreateService(ctx, ct.params.TestNamespace, svc, metav1.CreateOptions{})
-		if err != nil {
-			return err
-		}
-	}
-
 	if ct.params.MultiCluster != "" {
 		_, err = ct.clients.src.GetService(ctx, ct.params.TestNamespace, echoOtherNodeDeploymentName, metav1.GetOptions{})
 		if err != nil {
@@ -330,39 +319,6 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("unable to create configmap %s: %s", corednsConfigMapName, err)
 			}
-		}
-	}
-
-	_, err = ct.clients.src.GetDeployment(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.GetOptions{})
-	if err != nil {
-		ct.Logf("✨ [%s] Deploying same-node deployment...", ct.clients.src.ClusterName())
-		containerPort := 8080
-		echoDeployment := newDeploymentWithDNSTestServer(deploymentParameters{
-			Name:   echoSameNodeDeploymentName,
-			Kind:   kindEchoName,
-			Port:   containerPort,
-			Image:  ct.params.JSONMockImage,
-			Labels: map[string]string{"other": "echo"},
-			Affinity: &corev1.Affinity{
-				PodAffinity: &corev1.PodAffinity{
-					RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
-						{
-							LabelSelector: &metav1.LabelSelector{
-								MatchExpressions: []metav1.LabelSelectorRequirement{
-									{Key: "name", Operator: metav1.LabelSelectorOpIn, Values: []string{ClientDeploymentName}},
-								},
-							},
-							TopologyKey: "kubernetes.io/hostname",
-						},
-					},
-				},
-			},
-			Tolerations:    ct.params.GlobalTolerations,
-			ReadinessProbe: newLocalReadinessProbe(containerPort, "/"),
-		}, ct.params.DNSTestServerImage)
-		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, echoDeployment, metav1.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("unable to create deployment %s: %s", echoSameNodeDeploymentName, err)
 		}
 	}
 
@@ -627,7 +583,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 // deploymentList returns 2 lists of Deployments to be used for running tests with.
 func (ct *ConnectivityTest) deploymentList() (srcList []string, dstList []string) {
 	if !ct.params.Perf {
-		srcList = []string{ClientDeploymentName, Client2DeploymentName, echoSameNodeDeploymentName}
+		srcList = []string{ClientDeploymentName, Client2DeploymentName}
 	} else {
 		perfDeploymentNameManager := newPerfDeploymentNameManager(&ct.params)
 		srcList = []string{perfDeploymentNameManager.ClientName()}
@@ -643,11 +599,9 @@ func (ct *ConnectivityTest) deploymentList() (srcList []string, dstList []string
 
 func (ct *ConnectivityTest) deleteDeployments(ctx context.Context, client *k8s.Client) error {
 	ct.Logf("🔥 [%s] Deleting connectivity check deployments...", client.ClusterName())
-	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, echoOtherNodeDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, ClientDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteDeployment(ctx, ct.params.TestNamespace, Client2DeploymentName, metav1.DeleteOptions{})
-	_ = client.DeleteService(ctx, ct.params.TestNamespace, echoSameNodeDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteService(ctx, ct.params.TestNamespace, echoOtherNodeDeploymentName, metav1.DeleteOptions{})
 	_ = client.DeleteConfigMap(ctx, ct.params.TestNamespace, corednsConfigMapName, metav1.DeleteOptions{})
 	_ = client.DeleteNamespace(ctx, ct.params.TestNamespace, metav1.DeleteOptions{})
@@ -707,26 +661,6 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 		ct.clientPods[pod.Name] = Pod{
 			K8sClient: ct.client,
 			Pod:       pod.DeepCopy(),
-		}
-	}
-
-	sameNodePods, err := ct.clients.src.ListPods(ctx, ct.params.TestNamespace, metav1.ListOptions{LabelSelector: "name=" + echoSameNodeDeploymentName})
-	if err != nil {
-		return fmt.Errorf("unable to list same node pods: %w", err)
-	}
-	if len(sameNodePods.Items) != 1 {
-		return fmt.Errorf("unexpected number of same node pods: %d", len(sameNodePods.Items))
-	}
-	sameNodePod := Pod{
-		Pod: sameNodePods.Items[0].DeepCopy(),
-	}
-
-	sameNodeDNSCtx, sameNodeDNSCancel := context.WithTimeout(ctx, ct.params.ipCacheTimeout())
-	defer sameNodeDNSCancel()
-	for _, cp := range ct.clientPods {
-		err := ct.waitForPodDNS(sameNodeDNSCtx, cp, sameNodePod)
-		if err != nil {
-			return err
 		}
 	}
 
