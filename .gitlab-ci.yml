@@ -1,0 +1,19 @@
+default:
+  tags: ["arch:amd64"]
+
+build-image:
+  image: registry.ddbuild.io/docker:v33523271-28ffaf4-24.0.5@sha256:d7926483875447c84c44cce13c1ee05fafe351dc08ae389b4e4d50745b4ed3f7
+  rules:
+    - if: $CI_COMMIT_TAG
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
+  script:
+    - export IMAGE_REF=registry.ddbuild.io/$CI_PROJECT_NAME:$CI_COMMIT_TAG
+    - export METADATA_FILE=$(mktemp)
+    - docker buildx build \
+      --tag "$IMAGE_REF" \
+      --platform linux/amd64,linux/arm64 \
+      --push \
+      .
+    - ddsign sign "$IMAGE_REF" --docker-metadata-file "$METADATA_FILE"
