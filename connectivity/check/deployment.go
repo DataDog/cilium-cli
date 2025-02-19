@@ -499,26 +499,12 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 	if err != nil {
 		ct.Logf("✨ [%s] Deploying client2 deployment...", ct.clients.src.ClusterName())
 		clientDeployment := newDeployment(deploymentParameters{
-			Name:    Client2DeploymentName,
-			Kind:    kindClientName,
-			Port:    8080,
-			Image:   ct.params.CurlImage,
-			Command: []string{"/bin/ash", "-c", "sleep 10000000"},
-			Labels:  map[string]string{"other": "client"},
-			Affinity: &corev1.Affinity{
-				PodAffinity: &corev1.PodAffinity{
-					RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
-						{
-							LabelSelector: &metav1.LabelSelector{
-								MatchExpressions: []metav1.LabelSelectorRequirement{
-									{Key: "name", Operator: metav1.LabelSelectorOpIn, Values: []string{ClientDeploymentName}},
-								},
-							},
-							TopologyKey: "kubernetes.io/hostname",
-						},
-					},
-				},
-			},
+			Name:        Client2DeploymentName,
+			Kind:        kindClientName,
+			Port:        8080,
+			Image:       ct.params.CurlImage,
+			Command:     []string{"/bin/ash", "-c", "sleep 10000000"},
+			Labels:      map[string]string{"other": "client"},
 			Tolerations: ct.params.GlobalTolerations,
 		})
 		_, err = ct.clients.src.CreateDeployment(ctx, ct.params.TestNamespace, clientDeployment, metav1.CreateOptions{})
@@ -559,7 +545,7 @@ func (ct *ConnectivityTest) deploy(ctx context.Context) error {
 							{
 								LabelSelector: &metav1.LabelSelector{
 									MatchExpressions: []metav1.LabelSelectorRequirement{
-										{Key: "name", Operator: metav1.LabelSelectorOpIn, Values: []string{ClientDeploymentName}},
+										{Key: "name", Operator: metav1.LabelSelectorOpIn, Values: []string{ClientDeploymentName, Client2DeploymentName}},
 									},
 								},
 								TopologyKey: "kubernetes.io/hostname",
