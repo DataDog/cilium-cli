@@ -638,12 +638,6 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 	}
 
 	for _, pod := range clientPods.Items {
-		ctx, cancel := context.WithTimeout(ctx, ct.params.ciliumEndpointTimeout())
-		defer cancel()
-		if err := ct.waitForCiliumEndpoint(ctx, ct.clients.src, ct.params.TestNamespace, pod.Name); err != nil {
-			return err
-		}
-
 		ct.clientPods[pod.Name] = Pod{
 			K8sClient: ct.client,
 			Pod:       pod.DeepCopy(),
@@ -691,14 +685,6 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			continue
 		}
 
-		// Individual endpoints will not be created for pods using node's network stack
-		if !ct.params.PerfHostNet {
-			ctx, cancel := context.WithTimeout(ctx, ct.params.ciliumEndpointTimeout())
-			defer cancel()
-			if err := ct.waitForCiliumEndpoint(ctx, ct.clients.src, ct.params.TestNamespace, perfPod.Name); err != nil {
-				return err
-			}
-		}
 		_, hasLabel := perfPod.GetLabels()["server"]
 		if hasLabel {
 			ct.perfServerPod[perfPod.Name] = Pod{
@@ -720,12 +706,6 @@ func (ct *ConnectivityTest) validateDeployment(ctx context.Context) error {
 			return fmt.Errorf("unable to list echo pods: %w", err)
 		}
 		for _, echoPod := range echoPods.Items {
-			ctx, cancel := context.WithTimeout(ctx, ct.params.ciliumEndpointTimeout())
-			defer cancel()
-			if err := ct.waitForCiliumEndpoint(ctx, client, ct.params.TestNamespace, echoPod.Name); err != nil {
-				return err
-			}
-
 			ct.echoPods[echoPod.Name] = Pod{
 				K8sClient: client,
 				Pod:       echoPod.DeepCopy(),
@@ -1029,23 +1009,4 @@ func (ct *ConnectivityTest) waitForNodePorts(ctx context.Context, nodeIP string,
 		}
 	}
 	return nil
-}
-
-func (ct *ConnectivityTest) waitForCiliumEndpoint(ctx context.Context, client *k8s.Client, namespace, name string) error {
-	ct.Logf("⌛ [%s] Waiting for CiliumEndpoint for pod %s/%s to appear...", client.ClusterName(), namespace, name)
-	for {
-		_, err := client.GetCiliumEndpoint(ctx, ct.params.TestNamespace, name, metav1.GetOptions{})
-		if err == nil {
-			return nil
-		}
-
-		ct.Debugf("[%s] Error getting CiliumEndpoint for pod %s/%s: %s", client.ClusterName(), namespace, name, err)
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("aborted waiting for CiliumEndpoint for pod %s to appear: %w", name, ctx.Err())
-		case <-time.After(2 * time.Second):
-			continue
-		}
-	}
 }
