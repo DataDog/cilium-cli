@@ -155,6 +155,8 @@ func newDeployment(p deploymentParameters) *appsv1.Deployment {
 	for k, v := range p.Labels {
 		dep.Spec.Template.ObjectMeta.Labels[k] = v
 	}
+	dep.Spec.Template.ObjectMeta.Labels["team"] = "compute"
+	dep.Spec.Template.ObjectMeta.Labels["service"] = "cilium-connectivity-tests"
 
 	return dep
 }
